@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LaserDraw Web App</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    input {
+      width: 50px;
+      margin: 5px;
+    }
+    .input-section {
+      margin: 10px 0;
+    }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+    }
+    pre {
+      margin-top: 20px;
+      text-align: left;
+      border: 1px solid #ccc;
+      padding: 10px;
+      max-height: 200px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>LaserDraw</h1>
+
+  <div class="input-section">
+    <label>Text to show:</label>
+    <input type="text" id="textInput" placeholder="HELLO">
+  </div>
+
+  <div class="input-section">
+    <label>Color RGB (0-255):</label>
+    <input type="number" id="rInput" placeholder="255" min="0" max="255">
+    <input type="number" id="gInput" placeholder="0" min="0" max="255">
+    <input type="number" id="bInput" placeholder="0" min="0" max="255">
+  </div>
+
+  <div class="input-section">
+    <label>Brightness (0-100):</label>
+    <input type="number" id="brightInput" placeholder="80" min="0" max="100">
+  </div>
+
+  <button id="connectBtn">Connect Bluetooth</button>
+  <button id="sendBtn" disabled>Send to ESP32</button>
+
+  <pre id="log"></pre>
+
+  <script>
+    let espDevice;
+    let espServer;
+    let log = document.getElementById("log");
+
+    document.getElementById("connectBtn").addEventListener("click", async () => {
+      try {
+        log.textContent += "Requesting Bluetooth device...\n";
+        espDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ name: "arduino devices send massages" }],
+          optionalServices: ['00001101-0000-1000-8000-00805f9b34fb']
+        });
+
+        espServer = await espDevice.gatt.connect();
+        log.textContent += "Connected to ESP32!\n";
+
+        document.getElementById("sendBtn").disabled = false;
+      } catch (err) {
+        log.textContent += "Error: " + err + "\n";
+      }
+    });
+
+    document.getElementById("sendBtn").addEventListener("click", async () => {
+      if (!espServer) {
+        alert("Not connected!");
+        return;
+      }
+
+      let text = document.getElementById("textInput").value || "HELLO";
+      let r = document.getElementById("rInput").value || 255;
+      let g = document.getElementById("gInput").value || 0;
+      let b = document.getElementById("bInput").value || 0;
+      let bright = document.getElementById("brightInput").value || 80;
+
+      let message = `TEXT:${text};COLOR:${r},${g},${b};BRIGHT:${bright}\n`;
+      log.textContent += "Sending: " + message;
+
+      try {
+        const service = await espServer.getPrimaryService('00001101-0000-1000-8000-00805f9b34fb');
+        const characteristic = await service.getCharacteristic('00001101-0000-1000-8000-00805f9b34fb');
+
+        let encoder = new TextEncoder();
+        await characteristic.writeValue(encoder.encode(message));
+        log.textContent += " -> Sent!\n";
+      } catch (err) {
+        log.textContent += "Error sending: " + err + "\n";
+      }
+    });
+  </script>
+</body>
+</html>
