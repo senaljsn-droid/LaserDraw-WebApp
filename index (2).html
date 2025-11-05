@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>LaserDraw — Web BLE Controller</title>
+<style>
+  :root{
+    --bg:#070707; --card:#0f0f10; --muted:#9aa0a6; --accent:#39ffaf;
+    --danger:#ff6b6b;
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#000,#081018);color:#e9eef2;font-family:Inter,Segoe UI,Roboto,Arial;}
+  .app{max-width:900px;margin:18px auto;padding:18px;border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));box-shadow:0 6px 30px rgba(0,0,0,0.6);}
+  header{display:flex;align-items:center;justify-content:space-between;}
+  h1{margin:6px 0;font-size:20px;letter-spacing:0.4px}
+  .menu-btn, .settings-btn { background:transparent;border:0;color:var(--muted);font-size:20px;padding:6px;cursor:pointer; }
+  .menu-panel, .settings-panel { position:absolute;background:var(--card);padding:12px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.6);display:none;z-index:30;}
+  .controls{display:grid;grid-template-columns:1fr 320px;gap:16px;margin-top:18px;}
+  .left, .right{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02));padding:12px;border-radius:10px;}
+  label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
+  input[type="text"]{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:#050506;color:#fff}
+  .sliders{display:flex;gap:8px;align-items:center}
+  .slider-col{display:flex;flex-direction:column;align-items:center}
+  input[type="range"]{width:160px}
+  .color-preview{width:64px;height:64px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);box-shadow:inset 0 0 30px rgba(0,0,0,0.7)}
+  button.primary{background:linear-gradient(90deg,var(--accent),#5ef0c3);color:#001;text-transform:uppercase;padding:10px 14px;border-radius:8px;border:0;font-weight:700;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px;color:var(--muted);cursor:pointer}
+  .log{margin-top:12px;height:140px;overflow:auto;background:#020203;border-radius:8px;border:1px solid rgba(255,255,255,0.02);padding:10px;font-family:monospace;font-size:13px;color:#bfe9d6}
+  .device-list{margin-top:10px;max-height:120px;overflow:auto}
+  .device-item{padding:8px;border-radius:6px;margin-bottom:6px;background:rgba(255,255,255,0.01);cursor:pointer}
+  footer{margin-top:12px;color:var(--muted);font-size:13px}
+  /* small screens */
+  @media (max-width:800px){ .controls{grid-template-columns:1fr; } .right{order:-1} }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="menu-btn" id="menuBtn">?</button>
+      <h1>LaserDraw — Web Controller</h1>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;position:relative;">
+      <button class="settings-btn" id="settingsBtn">??</button>
+      <div class="settings-panel" id="settingsPanel" style="right:8px;top:44px;">
+        <div><strong style="color:#fff">Bluetooth Mode</strong></div>
+        <div style="margin-top:8px">
+          <label><input type="radio" name="btmode" value="ble" checked> Bluetooth LE (Web Bluetooth)</label>
+          <label><input type="radio" name="btmode" value="classic"> Bluetooth Classic (Native App)</label>
+        </div>
+        <div style="margin-top:10px;color:var(--muted);font-size:13px">
+          <div id="classicNote" style="display:none">
+            Classic SPP is not accessible from browsers. Use the native Android app (provided) to connect to Classic BluetoothSerial.
+          </div>
+          <div id="bleNote">Web Bluetooth will scan for BLE devices and connect to the custom service.</div>
+        </div>
+        <div style="margin-top:10px">
+          <button class="ghost" id="scanBtn">Scan BLE Devices</button>
+        </div>
+        <div class="device-list" id="deviceList"></div>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button class="ghost" id="disconnectBtn">Disconnect</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="controls">
+    <div class="left">
+      <label>Message to display (one line)</label>
+      <input id="textInput" type="text" placeholder="Type text to show on LCD and laser" />
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+        <div>
+          <label>Brightness (0–100)</label>
+          <input id="brightInput" type="range" min="0" max="100" value="80" />
+        </div>
+        <div style="text-align:center">
+          <label>Preview</label>
+          <div class="color-preview" id="colorPreview"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px">
+        <label>RGB Color</label>
+        <div class="sliders">
+          <div class="slider-col">
+            <small style="color:var(--muted)">R</small>
+            <input id="rSlider" type="range" min="0" max="255" value="255" />
+            <input id="rVal" type="number" min="0" max="255" value="255" style="width:60px;margin-top:6px" />
+          </div>
+          <div class="slider-col">
+            <small style="color:var(--muted)">G</small>
+            <input id="gSlider" type="range" min="0" max="255" value="0" />
+            <input id="gVal" type="number" min="0" max="255" value="0" style="width:60px;margin-top:6px" />
+          </div>
+          <div class="slider-col">
+            <small style="color:var(--muted)">B</small>
+            <input id="bSlider" type="range" min="0" max="255" value="0" />
+            <input id="bVal" type="number" min="0" max="255" value="0" style="width:60px;margin-top:6px" />
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button class="primary" id="sendBtn" disabled>Send to ESP32</button>
+        <button class="ghost" id="clearBtn">Clear</button>
+      </div>
+
+      <div class="log" id="log">Log: ready</div>
+      <footer>Open this page in Chrome on Android. Web Bluetooth only supports BLE (GATT).</footer>
+    </div>
+
+    <div class="right">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong style="color:#fff">Connected Device</strong>
+        <span id="connStatus" style="color:var(--muted)">Not connected</span>
+      </div>
+
+      <div style="margin-top:12px">
+        <label>Available Devices (BLE scan)</label>
+        <div class="device-list" id="scanResults"></div>
+      </div>
+
+      <div style="margin-top:12px">
+        <label>Advanced</label>
+        <div style="font-size:13px;color:var(--muted);line-height:1.4">
+          Use BLE mode: ESP32 must run the BLE GATT server with the service and characteristic UUIDs shown below.
+          <div style="margin-top:8px;background:#020203;padding:8px;border-radius:6px;color:#aee7c8;font-family:monospace">
+            Service UUID: <span id="svcUUID">12345678-1234-1234-1234-123456789abc</span><br>
+            Char UUID: <span id="charUUID">abcdef01-1234-1234-1234-123456789abc</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- small menu panel -->
+<div class="menu-panel" id="menuPanel" style="left:18px;top:64px;">
+  <div style="padding:6px">
+    <div><button class="ghost" id="menuClear">Clear Screen</button></div>
+    <div style="height:8px"></div>
+    <div><button class="ghost" id="menuAbout">About App</button></div>
+  </div>
+</div>
+
+<script>
+/* CONFIG: BLE service/characteristic UUIDs used by ESP32 BLE server */
+const SERVICE_UUID = '12345678-1234-1234-1234-123456789abc';
+const CHARACTERISTIC_UUID = 'abcdef01-1234-1234-1234-123456789abc';
+
+let bleDevice = null;
+let bleServer = null;
+let bleCharacteristic = null;
+
+const logEl = document.getElementById('log');
+const colorPreview = document.getElementById('colorPreview');
+const rSlider = document.getElementById('rSlider');
+const gSlider = document.getElementById('gSlider');
+const bSlider = document.getElementById('bSlider');
+const rVal = document.getElementById('rVal');
+const gVal = document.getElementById('gVal');
+const bVal = document.getElementById('bVal');
+const brightInput = document.getElementById('brightInput');
+const sendBtn = document.getElementById('sendBtn');
+const connStatus = document.getElementById('connStatus');
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsPanel = document.getElementById('settingsPanel');
+const menuBtn = document.getElementById('menuBtn');
+const menuPanel = document.getElementById('menuPanel');
+const scanBtn = document.getElementById('scanBtn');
+const scanResults = document.getElementById('scanResults');
+const deviceList = document.getElementById('deviceList');
+const disconnectBtn = document.getElementById('disconnectBtn');
+const btModeRadios = document.getElementsByName('btmode');
+const classicNote = document.getElementById('classicNote');
+const bleNote = document.getElementById('bleNote');
+
+function appendLog(s){ logEl.textContent += '\\n' + s; logEl.scrollTop = logEl.scrollHeight; }
+
+function updatePreview(){
+  const r = parseInt(rSlider.value), g = parseInt(gSlider.value), b = parseInt(bSlider.value);
+  colorPreview.style.background = `rgb(${r},${g},${b})`;
+  rVal.value = r; gVal.value = g; bVal.value = b;
+}
+rSlider.oninput = () => updatePreview();
+gSlider.oninput = () => updatePreview();
+bSlider.oninput = () => updatePreview();
+rVal.onchange = ()=>{ rSlider.value = rVal.value; updatePreview(); }
+gVal.onchange = ()=>{ gSlider.value = gVal.value; updatePreview(); }
+bVal.onchange = ()=>{ bSlider.value = bVal.value; updatePreview(); }
+
+brightInput.oninput = ()=>{ /* preview brightness applied when sending */ }
+
+/* menu toggles */
+menuBtn.onclick = (e)=>{ menuPanel.style.display = (menuPanel.style.display==='block')?'none':'block'; }
+settingsBtn.onclick = (e)=>{ settingsPanel.style.display = (settingsPanel.style.display==='block')?'none':'block'; }
+document.getElementById('menuClear').onclick = ()=>{ document.getElementById('textInput').value=''; appendLog('Cleared input'); }
+document.getElementById('menuAbout').onclick = ()=>{ alert('LaserDraw Web Controller — use BLE on Chrome.'); }
+
+/* radio change: show/hide notes */
+Array.from(btModeRadios).forEach(r=>{
+  r.addEventListener('change', ()=>{
+    if(r.value==='classic' && r.checked){ classicNote.style.display='block'; bleNote.style.display='none'; appendLog('Classic selected — use native Android app for SPP.'); sendBtn.disabled=true; }
+    if(r.value==='ble' && r.checked){ classicNote.style.display='none'; bleNote.style.display='block'; appendLog('BLE selected — you can scan & connect here.'); sendBtn.disabled = (bleCharacteristic==null); }
+  });
+});
+
+/* scan for BLE devices and show results */
+scanBtn.onclick = async () => {
+  appendLog('Scanning for BLE devices (with service)...');
+  scanResults.innerHTML = '';
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{services: [SERVICE_UUID]}],
+      optionalServices: [SERVICE_UUID]
+    });
+    appendLog('Found: ' + (device.name||device.id));
+    const item = document.createElement('div'); item.className='device-item'; item.textContent = (device.name||device.id);
+    item.onclick = ()=> connectToDevice(device);
+    scanResults.appendChild(item);
+  } catch(err){
+    appendLog('Scan error: '+err);
+  }
+};
+
+async function connectToDevice(device){
+  try{
+    appendLog('Connecting to '+(device.name||device.id));
+    bleDevice = device;
+    bleServer = await device.gatt.connect();
+    appendLog('GATT connected');
+    const service = await bleServer.getPrimaryService(SERVICE_UUID);
+    bleCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+    appendLog('Characteristic ready');
+    connStatus.textContent = (device.name||device.id);
+    sendBtn.disabled = false;
+  } catch(err){
+    appendLog('Connect failed: '+err);
+    connStatus.textContent = 'Not connected';
+  }
+}
+
+disconnectBtn.onclick = async ()=>{
+  try{
+    if(bleDevice && bleDevice.gatt.connected) await bleDevice.gatt.disconnect();
+    bleDevice=null; bleServer=null; bleCharacteristic=null;
+    connStatus.textContent='Not connected';
+    appendLog('Disconnected');
+    sendBtn.disabled=true;
+  }catch(e){ appendLog('Disconnect err: '+e); }
+};
+
+/* send message over BLE characteristic */
+sendBtn.onclick = async ()=>{
+  if(!bleCharacteristic){
+    alert('Not connected to BLE device.');
+    return;
+  }
+  const text = document.getElementById('textInput').value.trim() || 'HELLO';
+  const r = parseInt(rSlider.value), g = parseInt(gSlider.value), b = parseInt(bSlider.value);
+  const bright = parseInt(brightInput.value||80);
+  const msg = `TEXT:${text};COLOR:${r},${g},${b};BRIGHT:${bright}\\n`;
+  appendLog('Sending: '+msg);
+  try{
+    const enc = new TextEncoder();
+    await bleCharacteristic.writeValue(enc.encode(msg));
+    appendLog('Sent ok');
+  } catch(err){
+    appendLog('Send err: '+err);
+  }
+};
+
+/* clicking a scanned device (if user wants to connect to one by name) */
+function addScannedDeviceToList(device){
+  const item = document.createElement('div'); item.className='device-item';
+  item.textContent = (device.name||device.id);
+  item.onclick = ()=> connectToDevice(device);
+  deviceList.appendChild(item);
+}
+
+/* graceful feature detection */
+if(!navigator.bluetooth){
+  appendLog('Web Bluetooth not available in this browser. Use Chrome on Android.');
+  document.getElementById('settingsBtn').disabled=true;
+  document.getElementById('scanBtn').disabled=true;
+}
+
+updatePreview();
+</script>
+</body>
+</html>
