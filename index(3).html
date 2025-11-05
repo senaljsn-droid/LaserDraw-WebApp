@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>LaserDraw — Full Controller</title>
+<style>
+  :root{
+    --bg:#050608; --card:#0d1114; --muted:#9aa0a6; --accent:#39ffaf; --danger:#ff6b6b;
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#000,#071019);color:#e9eef2;font-family:Inter,Segoe UI,Roboto,Arial;}
+  .app{max-width:1000px;margin:12px auto;padding:14px;border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));box-shadow:0 6px 30px rgba(0,0,0,0.6);}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  h1{margin:6px 0;font-size:18px}
+  .menu-btn, .settings-btn { background:transparent;border:0;color:var(--muted);font-size:22px;padding:6px;cursor:pointer; }
+  .menu-panel, .settings-panel { position:absolute;background:var(--card);padding:12px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.6);display:none;z-index:40;min-width:220px}
+  .controls{display:grid;grid-template-columns:1fr 360px;gap:14px;margin-top:14px}
+  .left, .right{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02));padding:12px;border-radius:10px}
+  label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
+  input[type="text"], input[type="number"]{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:#050506;color:#fff}
+  .sliders{display:flex;gap:10px;align-items:center}
+  .slider-col{display:flex;flex-direction:column;align-items:center}
+  input[type="range"]{width:150px}
+  .color-preview{width:64px;height:64px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);box-shadow:inset 0 0 30px rgba(0,0,0,0.6)}
+  button.primary{background:linear-gradient(90deg,var(--accent),#5ef0c3);color:#001;text-transform:uppercase;padding:10px 14px;border-radius:8px;border:0;font-weight:700;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px;color:var(--muted);cursor:pointer}
+  .log{margin-top:12px;height:160px;overflow:auto;background:#020203;border-radius:8px;border:1px solid rgba(255,255,255,0.02);padding:10px;font-family:monospace;font-size:13px;color:#bfe9d6}
+  .device-list{margin-top:8px;max-height:220px;overflow:auto}
+  .device-item{padding:8px;border-radius:6px;margin-bottom:6px;background:rgba(255,255,255,0.01);cursor:pointer}
+  .words-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .word-btn{padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.02);cursor:pointer}
+  .xy-pad{width:100%;height:220px;background:#010203;border-radius:8px;border:1px solid rgba(255,255,255,0.02);touch-action:none;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  footer{margin-top:8px;color:var(--muted);font-size:13px}
+  .modes{display:flex;gap:8px}
+  .mode-btn{padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:var(--muted);cursor:pointer}
+  @media (max-width:880px){ .controls{grid-template-columns:1fr} .right{order:-1} .xy-pad{height:180px} }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header>
+    <div style="display:flex;align-items:center;gap:8px;position:relative">
+      <button class="menu-btn" id="menuBtn">⋮</button>
+      <h1>LaserDraw — Full Controller</h1>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;position:relative">
+      <button class="settings-btn" id="settingsBtn">⚙️</button>
+    </div>
+  </header>
+
+  <!-- menu panel -->
+  <div class="menu-panel" id="menuPanel" style="left:14px;top:54px;">
+    <div style="padding:6px">
+      <button class="ghost" id="menuClear">Clear Input</button><br><br>
+      <button class="ghost" id="menuAbout">About / Help</button>
+    </div>
+  </div>
+
+  <!-- settings -->
+  <div class="settings-panel" id="settingsPanel" style="right:14px;top:54px;">
+    <div><strong style="color:#fff">Bluetooth Mode</strong></div>
+    <div style="margin-top:8px">
+      <label><input type="radio" name="btmode" value="ble" checked> Bluetooth LE (Web Bluetooth)</label><br>
+      <label><input type="radio" name="btmode" value="classic"> Bluetooth Classic (Native App)</label>
+    </div>
+    <div style="margin-top:10px;color:var(--muted);font-size:13px">
+      <div id="classicNote" style="display:none">Classic SPP is not accessible from browsers. Use native Android app for classic SPP.</div>
+      <div id="bleNote">BLE mode: scan for devices below and connect.</div>
+    </div>
+    <div style="margin-top:8px"><button class="ghost" id="scanBtn">Scan BLE Devices</button></div>
+    <div class="device-list" id="scanResults"></div>
+    <div style="margin-top:8px">
+      <button class="ghost" id="disconnectBtn">Disconnect</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="left">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center">
+          <div style="font-weight:700">Mode</div>
+          <div class="modes">
+            <button class="mode-btn" id="modeText">Text</button>
+            <button class="mode-btn" id="modeFree">Freehand</button>
+            <button class="mode-btn" id="modeShape">Shapes</button>
+          </div>
+        </div>
+        <div style="text-align:right;color:var(--muted);font-size:13px">Device: <span id="connStatus">Not connected</span></div>
+      </div>
+
+      <!-- Text mode -->
+      <div id="panelText" style="margin-top:12px">
+        <label>Message (one line):</label>
+        <input id="textInput" type="text" placeholder="Type message to show on LCD/laser" />
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+          <button class="ghost" id="splitBtn">Split into words</button>
+          <button class="ghost" id="assignAllWhite">Reset word colors</button>
+        </div>
+
+        <div class="words-row" id="wordsRow"></div>
+
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+          <label style="margin-right:6px">Assign color:</label>
+          <button class="ghost" id="setRed">Red</button>
+          <button class="ghost" id="setGreen">Green</button>
+          <button class="ghost" id="setBlue">Blue</button>
+        </div>
+      </div>
+
+      <!-- Freehand mode -->
+      <div id="panelFree" style="margin-top:12px;display:none">
+        <label>Draw on pad — points will be converted to servo X/Y (0–180)</label>
+        <div class="xy-pad" id="drawPad">Draw here with finger / mouse</div>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button class="ghost" id="clearCanvas">Clear</button>
+          <button class="ghost" id="sendCanvas">Send Drawing</button>
+          <button class="ghost" id="toggleStream">Stream Live (on draw)</button>
+        </div>
+      </div>
+
+      <!-- Shape mode -->
+      <div id="panelShape" style="margin-top:12px;display:none">
+        <label>Shapes</label>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="ghost" data-shape="CUBE">Cube</button>
+          <button class="ghost" data-shape="PLANE">Plane</button>
+          <button class="ghost" data-shape="CIRCLE">Circle</button>
+        </div>
+      </div>
+
+      <!-- Color controls -->
+      <div style="margin-top:12px">
+        <label>RGB Color</label>
+        <div class="sliders">
+          <div class="slider-col">
+            <small style="color:var(--muted)">R</small>
+            <input id="rSlider" type="range" min="0" max="255" value="255" />
+            <input id="rVal" type="number" min="0" max="255" value="255" style="width:60px;margin-top:6px" />
+          </div>
+          <div class="slider-col">
+            <small style="color:var(--muted)">G</small>
+            <input id="gSlider" type="range" min="0" max="255" value="0" />
+            <input id="gVal" type="number" min="0" max="255" value="0" style="width:60px;margin-top:6px" />
+          </div>
+          <div class="slider-col">
+            <small style="color:var(--muted)">B</small>
+            <input id="bSlider" type="range" min="0" max="255" value="0" />
+            <input id="bVal" type="number" min="0" max="255" value="0" style="width:60px;margin-top:6px" />
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+          <div>
+            <label>Brightness (0–100)</label><br>
+            <input id="brightInput" type="range" min="0" max="100" value="80" />
+          </div>
+          <div style="text-align:center">
+            <label>Preview</label>
+            <div class="color-preview" id="colorPreview"></div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="primary" id="sendBtn" disabled>Send</button>
+          <button class="ghost" id="sendXY">Send X/Y</button>
+        </div>
+      </div>
+
+      <div class="log" id="log">Log: ready</div>
+      <footer>Open in Chrome on Android. BLE required for browser control. Use Classic native app for BluetoothSerial/SPP.</footer>
+    </div>
+
+    <div class="right">
+      <div>
+        <strong>BLE Service / Char</strong>
+        <div style="margin-top:8px;background:#020203;padding:8px;border-radius:6px;color:#aee7c8;font-family:monospace">
+          Service: <span id="svcUUID">12345678-1234-1234-1234-123456789abc</span><br>
+          Char:    <span id="charUUID">abcdef01-1234-1234-1234-123456789abc</span>
+        </div>
+      </div>
+
+      <div style="margin-top:12px">
+        <label>Scanned Devices</label>
+        <div class="device-list" id="scanList"></div>
+      </div>
+
+      <div style="margin-top:12px">
+        <label>Manual X / Y (0–180)</label>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <input id="xVal" type="number" min="0" max="180" value="90" style="width:80px"/>
+          <input id="yVal" type="number" min="0" max="180" value="90" style="width:80px"/>
+        </div>
+        <div style="margin-top:8px">
+          <button class="ghost" id="moveBtn">Move Servos</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* --- Config & state --- */
+const SERVICE_UUID = '12345678-1234-1234-1234-123456789abc';
+const CHARACTERISTIC_UUID = 'abcdef01-1234-1234-1234-123456789abc';
+let bleDevice=null, bleServer=null, bleChar=null;
+let mode='text'; // text|free|shape
+let words=[], wordColors=[]; let selectedWordIndex=-1;
+let drawPoints=[]; let streamLive=false;
+const LOG = document.getElementById('log');
+
+/* UI refs */
+const menuBtn=document.getElementById('menuBtn'), menuPanel=document.getElementById('menuPanel');
+const settingsBtn=document.getElementById('settingsBtn'), settingsPanel=document.getElementById('settingsPanel');
+const scanBtn=document.getElementById('scanBtn'), scanResults=document.getElementById('scanResults');
+const disconnectBtn=document.getElementById('disconnectBtn');
+const connStatus=document.getElementById('connStatus');
+const sendBtn=document.getElementById('sendBtn');
+const colorPreview=document.getElementById('colorPreview');
+const rSlider=document.getElementById('rSlider'), gSlider=document.getElementById('gSlider'), bSlider=document.getElementById('bSlider');
+const rVal=document.getElementById('rVal'), gVal=document.getElementById('gVal'), bVal=document.getElementById('bVal');
+const brightInput=document.getElementById('brightInput');
+const splitBtn=document.getElementById('splitBtn'), wordsRow=document.getElementById('wordsRow');
+const setRed=document.getElementById('setRed'), setGreen=document.getElementById('setGreen'), setBlue=document.getElementById('setBlue');
+const panelText=document.getElementById('panelText'), panelFree=document.getElementById('panelFree'), panelShape=document.getElementById('panelShape');
+const modeText=document.getElementById('modeText'), modeFree=document.getElementById('modeFree'), modeShape=document.getElementById('modeShape');
+const drawPad=document.getElementById('drawPad'), clearCanvas=document.getElementById('clearCanvas'), sendCanvas=document.getElementById('sendCanvas'), toggleStream=document.getElementById('toggleStream');
+const xValInp=document.getElementById('xVal'), yValInp=document.getElementById('yVal'), moveBtn=document.getElementById('moveBtn');
+
+/* utilities */
+function log(s){ LOG.textContent += '\\n' + s; LOG.scrollTop = LOG.scrollHeight; }
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+/* menu toggles */
+menuBtn.onclick=()=> menuPanel.style.display=(menuPanel.style.display==='block'?'none':'block');
+settingsBtn.onclick=()=> settingsPanel.style.display=(settingsPanel.style.display==='block'?'none':'block');
+document.getElementById('menuClear').onclick=()=>{ document.getElementById('textInput').value=''; log('Cleared input'); }
+document.getElementById('menuAbout').onclick=()=> alert('LaserDraw — Web BLE Controller. Use Chrome on Android.');
+
+/* mode switching */
+function showMode(m){
+  mode=m;
+  panelText.style.display = (m==='text')?'block':'none';
+  panelFree.style.display = (m==='free')?'block':'none';
+  panelShape.style.display = (m==='shape')?'block':'none';
+}
+modeText.onclick=()=>showMode('text'); modeFree.onclick=()=>showMode('free'); modeShape.onclick=()=>showMode('shape');
+showMode('text');
+
+/* color preview sync */
+function updatePreview(){
+  let r=+rSlider.value, g=+gSlider.value, b=+bSlider.value;
+  colorPreview.style.background=`rgb(${r},${g},${b})`;
+  rVal.value=r; gVal.value=g; bVal.value=b;
+}
+rSlider.oninput=updatePreview; gSlider.oninput=updatePreview; bSlider.oninput=updatePreview;
+rVal.onchange=()=>{ rSlider.value=rVal.value; updatePreview(); }
+gVal.onchange=()=>{ gSlider.value=gVal.value; updatePreview(); }
+bVal.onchange=()=>{ bSlider.value=bVal.value; updatePreview(); }
+updatePreview();
+
+/* split words & per-word color handling */
+splitBtn.onclick=()=>{
+  const t=document.getElementById('textInput').value.trim();
+  if(!t){ alert('Type text first'); return; }
+  words = t.split(/\\s+/);
+  wordColors = words.map(()=> '255,255,255');
+  renderWordButtons();
+  log('Split into '+words.length+' words');
+};
+function renderWordButtons(){
+  wordsRow.innerHTML='';
+  words.forEach((w,i)=>{
+    const btn=document.createElement('div');
+    btn.className='word-btn';
+    btn.textContent = w + ' ('+(i+1)+')';
+    btn.style.border = (i===selectedWordIndex) ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.03)';
+    btn.onclick = ()=>{ selectedWordIndex=i; renderWordButtons(); log('Selected word '+(i+1)); };
+    // color dot
+    const col = wordColors[i].split(',');
+    btn.style.background = `linear-gradient(90deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02))`;
+    wordsRow.appendChild(btn);
+  });
+}
+document.getElementById('assignAllWhite').onclick = ()=>{ if(!words.length) return; wordColors = words.map(()=> '255,255,255'); renderWordButtons(); log('Reset colors'); };
+setRed.onclick = ()=>{ if(selectedWordIndex<0){alert('Select a word first'); return;} wordColors[selectedWordIndex]='255,0,0'; renderWordButtons(); };
+setGreen.onclick = ()=>{ if(selectedWordIndex<0){alert('Select a word first'); return;} wordColors[selectedWordIndex]='0,255,0'; renderWordButtons(); };
+setBlue.onclick = ()=>{ if(selectedWordIndex<0){alert('Select a word first'); return;} wordColors[selectedWordIndex]='0,0,255'; renderWordButtons(); };
+
+/* BLE scanning & connect */
+document.querySelectorAll('input[name="btmode"]').forEach(r=>{
+  r.addEventListener('change', ()=>{
+    if(r.value==='classic' && r.checked){ document.getElementById('classicNote').style.display='block'; document.getElementById('bleNote').style.display='none'; sendBtn.disabled=true; }
+    if(r.value==='ble' && r.checked){ document.getElementById('classicNote').style.display='none'; document.getElementById('bleNote').style.display='block'; sendBtn.disabled = (bleChar==null); }
+  });
+});
+
+scanBtn.onclick = async ()=>{
+  log('Requesting BLE device...');
+  try{
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }],
+      optionalServices: [SERVICE_UUID]
+    });
+    addScannedDevice(device);
+    await connectToDevice(device);
+  } catch(err){ log('Scan error: '+err); }
+};
+
+function addScannedDevice(device){
+  const id=(device.name||device.id);
+  const el=document.createElement('div'); el.className='device-item'; el.textContent=id;
+  el.onclick = ()=> connectToDevice(device);
+  document.getElementById('scanList').appendChild(el);
+}
+
+/* connect to selected device */
+async function connectToDevice(device){
+  try{
+    log('Connecting to '+(device.name||device.id));
+    bleDevice = device;
+    bleServer = await device.gatt.connect();
+    log('GATT connected');
+    const service = await bleServer.getPrimaryService(SERVICE_UUID);
+    bleChar = await service.getCharacteristic(CHARACTERISTIC_UUID);
+    connStatus.textContent = device.name || device.id;
+    sendBtn.disabled=false;
+    log('Ready to send');
+  }catch(err){
+    log('Connect failed: '+err);
+    connStatus.textContent='Not connected';
+  }
+}
+
+disconnectBtn.onclick = async ()=>{
+  try{
+    if(bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect();
+    bleDevice=null; bleServer=null; bleChar=null;
+    connStatus.textContent='Not connected'; sendBtn.disabled=true; log('Disconnected');
+  }catch(e){ log('Disconnect err: '+e); }
+};
+
+/* send helpers (text/words/xy/draw) */
+async function sendRawMessage(msg){
+  if(!bleChar){ alert('Not connected to BLE device'); return false;}
+  try{
+    await bleChar.writeValue(new TextEncoder().encode(msg));
+    log('→ SENT: '+msg.trim());
+    return true;
+  }catch(err){ log('Send error: '+err); return false; }
+}
+
+/* Send per-mode */
+sendBtn.onclick = async ()=>{
+  const bright = +brightInput.value || 80;
+  const r=+rSlider.value, g=+gSlider.value, b=+bSlider.value;
+  if(mode==='text'){
+    if(words.length>0){
+      const wordsCSV = words.join(',');
+      const colsCSV = wordColors.join('|');
+      const msg = `WORDS:${wordsCSV};COLS:${colsCSV};BRIGHT:${bright}\\n`;
+      await sendRawMessage(msg);
+    } else {
+      const text = document.getElementById('textInput').value.trim() || 'HELLO';
+      const msg = `TEXT:${text};COLOR:${r},${g},${b};BRIGHT:${bright}\\n`;
+      await sendRawMessage(msg);
+    }
+  } else if(mode==='free'){
+    // send canvas drawing
+    await sendCanvasPoints();
+  } else if(mode==='shape'){
+    alert('Select a shape button to send a pre-defined shape (not implemented inline).');
+  }
+};
+
+/* manual X/Y send */
+document.getElementById('sendXY').onclick = async ()=>{
+  const x = clamp(+document.getElementById('xVal').value || 90,0,180);
+  const y = clamp(+document.getElementById('yVal').value || 90,0,180);
+  const msg = `X:${x};Y:${y}\\n`;
+  await sendRawMessage(msg);
+};
+moveBtn.onclick = ()=> document.getElementById('sendXY').click();
+
+/* DRAW2D batching: send in chunks of N points */
+async function sendCanvasPoints(){
+  if(drawPoints.length===0){ alert('No drawing points'); return; }
+  const bright = +brightInput.value || 80;
+  const r = +rSlider.value, g=+gSlider.value, b=+bSlider.value;
+  const chunk = 120; // points per packet
+  let i=0;
+  while(i < drawPoints.length){
+    const slice = drawPoints.slice(i, i+chunk);
+    // format x,y pairs joined by |
+    const pairs = slice.map(p => `${p.x},${p.y}`).join('|');
+    const msg = `DRAW2D:${pairs};COLOR:${r},${g},${b};BRIGHT:${bright}\\n`;
+    const ok = await sendRawMessage(msg);
+    if(!ok) { log('Aborted sending drawing.'); return; }
+    i += chunk;
+    // small pause to let ESP32 process
+    await new Promise(res=>setTimeout(res, 80));
+  }
+  log('Finished sending drawing ('+drawPoints.length+' points)');
+}
+
+/* drawing pad: collect points normalized to 0..180 */
+let isDrawing=false;
+function getPadPos(evt){
+  const rect = drawPad.getBoundingClientRect();
+  const clientX = (evt.touches ? evt.touches[0].clientX : evt.clientX);
+  const clientY = (evt.touches ? evt.touches[0].clientY : evt.clientY);
+  const x = clamp(Math.round((clientX - rect.left) / rect.width * 180), 0, 180);
+  const y = clamp(Math.round((clientY - rect.top) / rect.height * 180), 0, 180);
+  return { x, y };
+}
+
+drawPad.addEventListener('pointerdown', (e)=>{ isDrawing=true; drawPad.setPointerCapture(e.pointerId); const p=getPadPos(e); drawPoints.push(p); drawPad.textContent = `Points: ${drawPoints.length}`; if(streamLive) sendRawMessage(`X:${p.x};Y:${p.y}\\n`); });
+drawPad.addEventListener('pointermove', (e)=>{ if(!isDrawing) return; const p=getPadPos(e); drawPoints.push(p); if(drawPoints.length%4===0) drawPad.textContent = `Points: ${drawPoints.length}`; if(streamLive){ if(bleChar) sendRawMessage(`X:${p.x};Y:${p.y}\\n`) } });
+drawPad.addEventListener('pointerup', (e)=>{ isDrawing=false; });
+clearCanvas.onclick = ()=>{ drawPoints=[]; drawPad.textContent='Draw here with finger / mouse'; log('Canvas cleared'); };
+toggleStream.onclick = ()=>{ streamLive = !streamLive; toggleStream.textContent = streamLive ? 'Streaming: ON' : 'Stream Live (on draw)'; log('Stream live '+(streamLive?'enabled':'disabled')); };
+sendCanvas.onclick = ()=> sendCanvasPoints();
+
+/* quick pre-defined shapes (very simple sample) */
+document.querySelectorAll('#panelShape .ghost').forEach(b=>{
+  b.onclick = async ()=>{
+    const shape = b.dataset.shape;
+    let pts = [];
+    if(shape==='CIRCLE'){
+      for(let a=0;a<360;a+=10){
+        const rx = Math.round(90 + 60 * Math.cos(a * Math.PI/180));
+        const ry = Math.round(90 + 60 * Math.sin(a * Math.PI/180));
+        pts.push({x:rx,y:ry});
+      }
+    } else if(shape==='PLANE'){ pts = [{x:10,y:10},{x:170,y:10},{x:170,y:170},{x:10,y:170},{x:10,y:10}]; }
+    else if(shape==='CUBE'){ pts = [{x:50,y:130},{x:90,y:90},{x:150,y:90},{x:110,y:130},{x:50,y:130}]; }
+    drawPoints = pts; log('Loaded shape '+shape+' ('+pts.length+' pts)'); sendCanvasPoints();
+  };
+});
+
+/* feature detection */
+if(!navigator.bluetooth) { log('Web Bluetooth not available. Use Chrome on Android.'); document.getElementById('scanBtn').disabled=true; }
+
+/* On load: wire some buttons */
+document.getElementById('clearBtn').onclick = ()=>{ document.getElementById('textInput').value=''; words=[]; wordColors=[]; renderWordButtons(); log('Cleared text'); };
+document.getElementById('splitBtn').onclick = ()=>{ splitBtn.click(); }; // already handled
+document.getElementById('sendBtn').onclick = ()=>{ sendBtn.click(); };
+
+log('App ready. Select BLE mode and scan, or use native app for Classic SPP.');
+</script>
+</body>
+</html>
