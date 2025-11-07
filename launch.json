@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LaserDraw Controller</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Roboto,Arial;background:#0b0f14;color:#e6eef6;display:flex;flex-direction:column;align-items:center;padding:18px}
+  .card{background:#0f1620;padding:18px;border-radius:12px;max-width:520px;width:100%;box-shadow:0 6px 30px rgba(0,0,0,0.6)}
+  h1{margin:0 0 8px 0;font-size:20px}
+  label{font-size:13px;color:#9fb0c5}
+  input[type=range]{width:100%}
+  .row{display:flex;gap:8px;margin-top:10px}
+  button{background:#1f7aef;color:#fff;padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06)}
+  .log{margin-top:12px;background:#081018;padding:8px;border-radius:8px;height:120px;overflow:auto;font-family:monospace;font-size:13px}
+  .small{font-size:12px;color:#9fb0c5}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>LaserDraw Controller</h1>
+    <div class="small">Mode:
+      <select id="modeSelect"><option value="auto">Auto (BLE preferred)</option><option value="ble">BLE</option><option value="wifi">WiFi</option></select>
+    </div>
+
+    <div style="margin-top:10px;">
+      <button id="connectBtn">Connect</button>
+      <span id="status" style="margin-left:12px;color:#9fb0c5">Not connected</span>
+    </div>
+
+    <hr style="margin:8px 0;border-color:#10202b">
+
+    <label>Servo X</label>
+    <input id="s1" type="range" min="0" max="180" value="90">
+    <div class="row"><button id="centerBtn">Center</button><button id="leftBtn" class="ghost">Left</button><button id="rightBtn" class="ghost">Right</button></div>
+
+    <label style="margin-top:10px">Servo Y</label>
+    <input id="s2" type="range" min="0" max="180" value="90">
+
+    <label style="margin-top:10px">RGB (0-255)</label>
+    <div class="row">
+      R <input id="r" type="number" min="0" max="255" value="0" style="width:70px">
+      G <input id="g" type="number" min="0" max="255" value="0" style="width:70px">
+      B <input id="b" type="number" min="0" max="255" value="0" style="width:70px">
+      <button id="sendRGB" class="ghost">Set</button>
+    </div>
+
+    <label style="margin-top:10px">Message to LCD</label>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <input id="msg" type="text" placeholder="Hello world" style="flex:1">
+      <button id="sendMsg" class="ghost">Send</button>
+    </div>
+
+    <div class="log" id="log">log:</div>
+  </div>
+
+<script>
+const serviceUUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
+const charUUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+
+let characteristic = null;
+let device = null;
+let server = null;
+let modeSelect = document.getElementById('modeSelect');
+const logEl = document.getElementById('log');
+
+function log(s){ logEl.textContent += "\n"+s; logEl.scrollTop = logEl.scrollHeight; }
+
+async function connectBLE() {
+  if (!navigator.bluetooth) { throw Error('Web Bluetooth not supported in this browser'); }
+  device = await navigator.bluetooth.requestDevice({
+    filters:[{name:'ESP32 Servo Controller'}],
+    optionalServices:[serviceUUID]
+  });
+  server = await device.gatt.connect();
+  const service = await server.getPrimaryService(serviceUUID);
+  characteristic = await service.getCharacteristic(charUUID);
+  document.getElementById('status').textContent = 'BLE connected';
+  log('BLE connected');
+}
+
+async function postToWiFi(cmd) {
+  // ESP32 AP default IP
+  const url = 'http://192.168.4.1/command';
+  try {
+    const resp = await fetch(url, { method:'POST', body: cmd });
+    if (!resp.ok) throw new Error(await resp.text());
+    log('HTTP sent: '+cmd);
+  } catch(e) {
+    log('HTTP error: '+e);
+    throw e;
+  }
+}
+
+async function sendCommand(cmd) {
+  const mode = modeSelect.value;
+  // decide automatically: if mode=auto and navigator.bluetooth available & characteristic connected => BLE
+  if ((mode === 'auto' || mode === 'ble') && characteristic) {
+    const enc = new TextEncoder();
+    await characteristic.writeValue(enc.encode(cmd));
+    log('BLE sent: '+cmd);
+    return;
+  }
+  if (mode === 'ble' && !characteristic) {
+    // attempt to connect
+    await connectBLE();
+    const enc = new TextEncoder();
+    await characteristic.writeValue(enc.encode(cmd));
+    log('BLE sent: '+cmd);
+    return;
+  }
+  // otherwise try HTTP to ESP32 AP
+  await postToWiFi(cmd);
+}
+
+document.getElementById('connectBtn').addEventListener('click', async ()=>{
+  try {
+    if (modeSelect.value === 'wifi') {
+      alert('Connect your phone to the WiFi: LaserDraw-AP and open this page on http://192.168.4.1');
+      return;
+    }
+    await connectBLE();
+  } catch(e) {
+    log('Connect failed: '+e);
+    alert('Connect failed: '+e);
+  }
+});
+
+document.getElementById('s1').addEventListener('input', e => {
+  const v = e.target.value;
+  sendCommand('S1' + v).catch(err=>log(err));
+});
+document.getElementById('s2').addEventListener('input', e => {
+  const v = e.target.value;
+  sendCommand('S2' + v).catch(err=>log(err));
+});
+document.getElementById('centerBtn').addEventListener('click', ()=>sendCommand('CENTER').catch(err=>log(err)));
+document.getElementById('leftBtn').addEventListener('click', ()=>sendCommand('LEFT').catch(err=>log(err)));
+document.getElementById('rightBtn').addEventListener('click', ()=>sendCommand('RIGHT').catch(err=>log(err)));
+
+document.getElementById('sendRGB').addEventListener('click', ()=>{
+  const r = document.getElementById('r').value;
+  const g = document.getElementById('g').value;
+  const b = document.getElementById('b').value;
+  sendCommand('RGB:'+r+','+g+','+b).catch(err=>log(err));
+});
+
+document.getElementById('sendMsg').addEventListener('click', ()=>{
+  const m = document.getElementById('msg').value || 'Hello';
+  sendCommand('MSG:'+m).catch(err=>log(err));
+});
+
+// Try to connect BLE on load only if hosted on HTTPS and user chooses auto.
+if (location.protocol === 'https:' && navigator.bluetooth) {
+  // keep it manual — user clicks Connect
+  log('Running under HTTPS — Web Bluetooth available (press Connect).');
+} else {
+  log('If you are not on HTTPS, use WiFi mode by connecting to the ESP32 AP.');
+}
+</script>
+</body>
+</html>
