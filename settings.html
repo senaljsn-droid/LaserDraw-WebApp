@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings - ESP32 Controller</title>
+  <link rel="icon" href="https://img.icons8.com/fluency/48/000000/settings.png">
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #1e272e, #485460);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+      overflow-y: auto;
+      transition: background 0.5s;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 10px 20px;
+      box-sizing: border-box;
+      background: rgba(255,255,255,0.1);
+    }
+
+    header button {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    .container {
+      width: 90%;
+      max-width: 450px;
+      background: rgba(255,255,255,0.1);
+      margin-top: 30px;
+      border-radius: 15px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .setting {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 15px 0;
+      padding: 10px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 10px;
+    }
+
+    .setting label {
+      font-size: 16px;
+    }
+
+    .theme-select {
+      background: transparent;
+      color: white;
+      border: 1px solid #aaa;
+      border-radius: 8px;
+      padding: 5px;
+    }
+
+    input[type="checkbox"] {
+      transform: scale(1.3);
+      cursor: pointer;
+    }
+
+    button {
+      background: #00a8ff;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 20px;
+      margin-top: 20px;
+      cursor: pointer;
+      width: 100%;
+      font-size: 16px;
+    }
+
+    button:hover {
+      background: #0097e6;
+    }
+
+    .wifi-list {
+      background: rgba(0,0,0,0.3);
+      padding: 10px;
+      border-radius: 10px;
+      margin-top: 10px;
+    }
+
+    .wifi-item {
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <button id="backBtn">← Back</button>
+    <h3>Settings</h3>
+    <div></div>
+  </header>
+
+  <div class="container">
+    <h2>App Preferences</h2>
+
+    <div class="setting">
+      <label for="themeSelect">Theme:</label>
+      <select id="themeSelect" class="theme-select">
+        <option value="default">Default</option>
+        <option value="blue">Ocean Blue</option>
+        <option value="dark">Dark Mode</option>
+        <option value="green">Neon Green</option>
+      </select>
+    </div>
+
+    <div class="setting">
+      <label for="autoConnect">Bluetooth Auto-Connect</label>
+      <input type="checkbox" id="autoConnect">
+    </div>
+
+    <div class="setting">
+      <label>Saved Wi-Fi Networks</label>
+    </div>
+    <div class="wifi-list" id="wifiList"></div>
+
+    <button id="saveBtn">💾 Save Settings</button>
+  </div>
+
+  <script type="module" src="settings.js"></script>
+</body>
+</html>
